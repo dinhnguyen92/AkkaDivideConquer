@@ -1,3 +1,3 @@
 trait Work {
-  val canSplit: Boolean
+  val isAtomic: Boolean
 }
