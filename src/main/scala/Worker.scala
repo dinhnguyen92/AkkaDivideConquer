@@ -1,4 +1,4 @@
-import akka.actor.{Actor, ActorLogging, ActorRef, FSM, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, FSM, PoisonPill, Props}
 import akka.routing.{ActorRefRoutee, Broadcast, RoundRobinGroup, RoundRobinRoutingLogic, Router}
 
 object Worker {
@@ -18,7 +18,13 @@ object Worker {
   sealed trait WorkerData
   case object NoWork extends WorkerData
   case class Workload(tasks: List[Task], directManager: ActorRef) extends WorkerData
-  case class AggregatedResult(workerManager: ActorRef, results: List[TaskResult]) extends WorkerData
+  case class DelegatedWorkload(inProgressWorkers: Set[ActorRef],
+                               results: List[TaskResult],
+                               directManager: ActorRef) extends WorkerData
+
+  // Worker Exceptions
+  val ILLEGAL_PARENT_ERROR = "Worker can only have one direct manager"
+  case class IllegalParentException(msg: String = ILLEGAL_PARENT_ERROR) extends RuntimeException(msg)
 }
 
 abstract class Worker(val branchingFactor: Int)
@@ -29,7 +35,7 @@ abstract class Worker(val branchingFactor: Int)
 
   protected def divide(task: Task): List[Task]
   protected def perform(task: Task): TaskResult
-  protected def aggregate(resultA: TaskResult, resultB: TaskResult): TaskResult
+  protected def combine(resultA: TaskResult, resultB: TaskResult): TaskResult
 
   protected def spawnChildWorkers(workerCount: Int): IndexedSeq[ActorRef] =
     for (i <- 1 to workerCount) yield context.actorOf(Props[Worker], s"child_$i")
@@ -44,11 +50,11 @@ abstract class Worker(val branchingFactor: Int)
   when(OnStandby) {
 
     case Event(Assignment(task), Workload(tasks, directManager)) =>
-      if (sender != directManager) throw new RuntimeException("Worker can only have one direct manager")
+      if (sender != directManager) throw new IllegalParentException
       stay using Workload(tasks :+ task, directManager)
 
     case Event(Execute, Workload(tasks, directManager)) =>
-      if (sender != directManager) throw new RuntimeException("Worker can only have one direct manager")
+      if (sender != directManager) throw new IllegalParentException
 
       // If there's only one atomic task
       // Perform the task and report the result
@@ -73,20 +79,39 @@ abstract class Worker(val branchingFactor: Int)
 
         // Use a round robin strategy to route tasks to child workers
         val childPaths = childWorkers.map(_.path.toString)
-        val workerManager = context.actorOf(RoundRobinGroup(childPaths).props())
-        tasksToTriage.foreach(workerManager ! Assignment(_))
+        val workerGroup = context.actorOf(RoundRobinGroup(childPaths).props())
+        tasksToTriage.foreach(workerGroup ! Assignment(_))
 
         // Once all of the tasks have been routed,
         // Tell all child workers to execute them
-        workerManager ! Broadcast(Execute)
+        workerGroup ! Broadcast(Execute)
 
-        goto(AggregatingResults) using AggregatedResult(workerManager, List())
+        goto(AggregatingResults) using DelegatedWorkload(Set(childWorkers), List(), directManager)
       }
   }
 
   when(AggregatingResults) {
 
-    case Event(TaskReport(result), AggregatedResult(workerManager, results)) => ???
+    case Event(TaskReport(result), DelegatedWorkload(inProgressWorkers, results, directManager)) =>
+      // Remove the child worker from the in-progress group and kill it
+      val remainingWorkers = inProgressWorkers - sender
+      sender ! PoisonPill
+
+      val resultsSoFar = results :+ result
+
+      if (remainingWorkers.isEmpty) {
+        // If results from all workers have been collected
+        // Compute the aggregate result and report back to direct manager
+        val aggregateResult = resultsSoFar.reduceLeft(combine)
+        directManager ! TaskReport(aggregateResult)
+
+        goto(Idle) using NoWork
+      }
+      else {
+        // If there are still in-progress workers
+        // Keep waiting for their reports
+        stay using DelegatedWorkload(inProgressWorkers, resultsSoFar, directManager)
+      }
   }
 }
 
