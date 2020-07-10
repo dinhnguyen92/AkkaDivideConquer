@@ -1,5 +1,5 @@
-import akka.actor.{Actor, ActorLogging, ActorRef, FSM, PoisonPill, Props}
-import akka.routing.{ActorRefRoutee, Broadcast, RoundRobinGroup, RoundRobinRoutingLogic, Router}
+import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props}
+import akka.routing.{Broadcast, RoundRobinGroup}
 
 object Worker {
   // Worker events
@@ -28,8 +28,7 @@ object Worker {
 }
 
 abstract class Worker(val branchingFactor: Int)
-  extends FSM[Worker.WorkerState, Worker.WorkerData]
-  with ActorLogging {
+  extends LoggingFSM[Worker.WorkerState, Worker.WorkerData] {
 
   import Worker._
 
@@ -86,7 +85,7 @@ abstract class Worker(val branchingFactor: Int)
         // Tell all child workers to execute them
         workerGroup ! Broadcast(Execute)
 
-        goto(AggregatingResults) using DelegatedWorkload(Set(childWorkers), List(), directManager)
+        goto(AggregatingResults) using DelegatedWorkload(childWorkers.toSet, List(), directManager)
       }
   }
 
