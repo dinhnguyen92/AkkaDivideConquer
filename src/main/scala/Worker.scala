@@ -2,21 +2,22 @@ import akka.actor.{Actor, ActorLogging, ActorRef, FSM}
 import akka.routing.{RoundRobinRoutingLogic, Router}
 
 object Worker {
-  trait WorkerState
-  trait WorkerData
+  // Worker events
+  sealed trait WorkerEvent
+  case class Assignment(work: Work) extends WorkerEvent
+  case object StartWork extends WorkerEvent
+  case class WorkReport(result: WorkReport) extends WorkerEvent
 
-  // All Worker states
+  // Worker states
+  sealed trait WorkerState
   case object AwaitingWork extends WorkerState
-  case object DividingWork extends WorkerState
-  case object ConqueringWork extends WorkerState
+  case object AssignedWork extends WorkerState
   case object AggregatingWork extends WorkerState
 
-  // All Worker data
+  // Worker data
+  sealed trait WorkerData
   case object NoWork extends WorkerData
-  case class NewWork(work: Work) extends WorkerData
-  case class WorkToDivide(work: Work) extends WorkerData
-  case class WorkToConquer(work: Work, workGiver: ActorRef) extends WorkerData
-
+  case class WorkLoad(work: Work, workGiver: ActorRef) extends WorkerData
 }
 
 abstract class Worker(val branchingFactor: Int)
@@ -28,17 +29,13 @@ abstract class Worker(val branchingFactor: Int)
   startWith(AwaitingWork, NoWork)
 
   when(AwaitingWork) {
-    case Event(NewWork(work), NoWork) =>
-      if (work.isAtomic) goto(ConqueringWork) using WorkToConquer(work, sender)
-      else goto(DividingWork) using WorkToDivide(work)
+    case Event(Assignment(work), NoWork) => goto(AssignedWork) using WorkLoad(work, sender)
   }
 
-  when(DividingWork) {
-    ???
-  }
-
-  when(ConqueringWork) {
-    ???
+  when(AssignedWork) {
+    case Event(StartWork, WorkLoad(work, workGiver)) =>
+      if (work.isAtomic) ??? // TODO: perform the work
+      else ??? // TODO: divide the work
   }
 
   when(AggregatingWork) {
