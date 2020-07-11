@@ -6,7 +6,7 @@ object Worker {
   sealed trait WorkerEvent
   case class Assignment(task: Task) extends WorkerEvent
   case object Execute extends WorkerEvent
-  case class TaskReport(result: TaskResult) extends WorkerEvent
+  case class TaskReport(result: Result) extends WorkerEvent
 
   // Worker states
   sealed trait WorkerState
@@ -19,7 +19,7 @@ object Worker {
   case object NoWork extends WorkerData
   case class Workload(tasks: List[Task], directManager: ActorRef) extends WorkerData
   case class DelegatedWorkload(inProgressWorkers: Set[ActorRef],
-                               results: List[TaskResult],
+                               results: List[Result],
                                directManager: ActorRef) extends WorkerData
 
   // Worker Exceptions
@@ -27,17 +27,17 @@ object Worker {
   case class IllegalParentException(msg: String = ILLEGAL_PARENT_ERROR) extends RuntimeException(msg)
 }
 
-abstract class Worker(val branchingFactor: Int)
+abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
   extends LoggingFSM[Worker.WorkerState, Worker.WorkerData] {
 
   import Worker._
 
-  protected def divide(task: Task): List[Task]
-  protected def perform(task: Task): TaskResult
-  protected def combine(resultA: TaskResult, resultB: TaskResult): TaskResult
+  protected def divide(task: Task): List[T]
+  protected def perform(task: Task): R
+  protected def combine(resultA: Result, resultB: Result): R
 
   protected def spawnChildWorkers(workerCount: Int): IndexedSeq[ActorRef] =
-    for (i <- 1 to workerCount) yield context.actorOf(Props[Worker], s"child_$i")
+    for (i <- 1 to workerCount) yield context.actorOf(Props[Worker[Task, Result]], s"child_$i")
 
 
   startWith(Idle, NoWork)
