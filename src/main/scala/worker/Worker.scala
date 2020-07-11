@@ -1,5 +1,9 @@
+package worker
+
 import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props}
 import akka.routing.{Broadcast, RoundRobinGroup}
+import result.Result
+import task.Task
 
 object Worker {
   // Worker events

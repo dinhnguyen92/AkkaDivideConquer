@@ -1,3 +1,5 @@
+package result
+
 trait Result {
 
 }
