@@ -21,14 +21,9 @@ object Worker {
   // Worker data
   sealed trait WorkerData
   case object NoWork extends WorkerData
-  case class Workload(tasks: List[Task], directManager: ActorRef) extends WorkerData
+  case class Workload(tasks: List[Task]) extends WorkerData
   case class DelegatedWorkload(inProgressWorkers: Set[ActorRef],
-                               results: List[Result],
-                               directManager: ActorRef) extends WorkerData
-
-  // Worker Exceptions
-  val ILLEGAL_PARENT_ERROR = "Worker can only have one direct manager"
-  case class IllegalParentException(msg: String = ILLEGAL_PARENT_ERROR) extends RuntimeException(msg)
+                               results: List[Result]) extends WorkerData
 }
 
 abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
@@ -39,31 +34,32 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
   protected def divide(task: Task): List[T]
   protected def perform(task: Task): R
   protected def combine(resultA: Result, resultB: Result): R
+  protected def createWorker(name: String): ActorRef
 
-  protected def spawnChildWorkers(workerCount: Int): IndexedSeq[ActorRef] =
-    for (i <- 1 to workerCount) yield context.actorOf(Props[Worker[Task, Result]], s"child_$i")
-
+  protected def createChildWorkers(workerCount: Int): IndexedSeq[ActorRef] =
+    for (i <- 1 to workerCount) yield createWorker(s"child_$i")
 
   startWith(Idle, NoWork)
 
   when(Idle) {
-    case Event(Assignment(task), NoWork) => goto(OnStandby) using Workload(List(task), sender)
+    case Event(Assignment(task), NoWork) =>
+      log.info("Going to OnStandBy")
+      goto(OnStandby) using Workload(List(task))
   }
 
   when(OnStandby) {
 
-    case Event(Assignment(task), Workload(tasks, directManager)) =>
-      if (sender != directManager) throw new IllegalParentException
-      stay using Workload(tasks :+ task, directManager)
+    case Event(Assignment(task), Workload(tasks)) =>
+      log.info("Receiving more task in OnStandBy")
+      stay using Workload(tasks :+ task)
 
-    case Event(Execute, Workload(tasks, directManager)) =>
-      if (sender != directManager) throw new IllegalParentException
-
+    case Event(Execute, Workload(tasks)) =>
       // If there's only one atomic task
       // Perform the task and report the result
       if (tasks.length == 1 && tasks.head.isAtomic) {
+        log.info("Performing atomic task")
         val result = perform(tasks.head)
-        directManager ! TaskReport(result)
+        sender ! TaskReport(result)
         goto(Idle) using NoWork
       }
       else {
@@ -77,7 +73,7 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // The number of child workers is either the branching factor
         // or the number of tasks, whichever is smaller
         val workerCount = math.min(branchingFactor, tasksToTriage.length)
-        val childWorkers = spawnChildWorkers(workerCount)
+        val childWorkers = createChildWorkers(workerCount)
         childWorkers.foreach(context.watch)
 
         // Use a round robin strategy to route tasks to child workers
@@ -89,13 +85,13 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // Tell all child workers to execute them
         workerGroup ! Broadcast(Execute)
 
-        goto(AggregatingResults) using DelegatedWorkload(childWorkers.toSet, List(), directManager)
+        goto(AggregatingResults) using DelegatedWorkload(childWorkers.toSet, List())
       }
   }
 
   when(AggregatingResults) {
 
-    case Event(TaskReport(result), DelegatedWorkload(inProgressWorkers, results, directManager)) =>
+    case Event(TaskReport(result), DelegatedWorkload(inProgressWorkers, results)) =>
       // Remove the child worker from the in-progress group and kill it
       val remainingWorkers = inProgressWorkers - sender
       sender ! PoisonPill
@@ -106,14 +102,14 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // If results from all workers have been collected
         // Compute the aggregate result and report back to direct manager
         val aggregateResult = resultsSoFar.reduceLeft(combine)
-        directManager ! TaskReport(aggregateResult)
+        sender ! TaskReport(aggregateResult)
 
         goto(Idle) using NoWork
       }
       else {
         // If there are still in-progress workers
         // Keep waiting for their reports
-        stay using DelegatedWorkload(inProgressWorkers, resultsSoFar, directManager)
+        stay using DelegatedWorkload(inProgressWorkers, resultsSoFar)
       }
   }
 }
