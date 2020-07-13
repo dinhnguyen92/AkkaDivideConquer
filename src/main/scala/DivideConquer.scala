@@ -5,13 +5,14 @@ import akka.util.Timeout
 import scala.io.Source
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 import scala.language.postfixOps
-
 import task.WordCountTask
 import worker.WordCountWorker
 import worker.Worker.{Assignment, Execute, TaskReport}
 import result.WordCountResult
+
+import scala.concurrent.Await
 
 object DivideConquer extends App {
 
@@ -27,14 +28,33 @@ object DivideConquer extends App {
   val worker = system.actorOf(Props[WordCountWorker], "rootWorker")
   val task = WordCountTask(text)
 
-  implicit val timeout: Timeout = Timeout(5 second)
-
+  // Assign the task to the worker
   worker ! Assignment(task)
-  val future = worker ? Execute
 
-  // Expected word count: 5552
-  future.onComplete {
-    case Success(TaskReport(WordCountResult(count))) => println(s"Final count: $count")
-    case Failure(exception) => println(s"Failure: ${exception.getMessage}")
+  // Normally we use onComplete to asynchronously handle the worker's response
+  // However, here we make this synchronous so that we can time the worker
+  val workerStart = System.nanoTime
+
+  // Tell the worker to execute the task and handle the result report
+  implicit val timeout: Timeout = Timeout(5 second)
+  val future = worker ? Execute
+  val report = Await.result(future, atMost = 5 second)
+
+  val workerStop = System.nanoTime
+
+  report match {
+    // Expected word count: 5552
+    case TaskReport(WordCountResult(count)) =>
+      println(s"Worker's final count: $count")
+      println(s"Worker's time: ${(workerStop - workerStart) / 1e9d} seconds")
+    case report => println(s"Unknown report of type '${report.getClass}'")
   }
+
+  // Perform the word count synchronously to compare the performance
+  val start = System.nanoTime
+  val count = text.split("\\s+").count(!_.isEmpty)
+  val stop = System.nanoTime
+
+  println(s"Synchronous final count: $count")
+  println(s"Synchronous time: ${(stop - start) / 1e9d} seconds")
 }
