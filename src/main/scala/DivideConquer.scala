@@ -3,16 +3,14 @@ import akka.pattern.ask
 import akka.util.Timeout
 
 import scala.io.Source
+import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.{Failure, Success}
 import scala.language.postfixOps
+
 import task.WordCountTask
 import worker.WordCountWorker
 import worker.Worker.{Assignment, Execute, TaskReport}
 import result.WordCountResult
-
-import scala.concurrent.Await
 
 object DivideConquer extends App {
 
