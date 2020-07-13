@@ -17,7 +17,7 @@ object DivideConquer extends App {
 
   // Details on how to read file in "resources" folder here:
   // https://stackoverflow.com/questions/31453511/how-to-read-a-text-file-using-relative-path-in-scala
-  val source = Source.fromResource("FDR_inaugural_address.txt")
+  val source = Source.fromResource("FDR_inaugural_addresses.txt")
 
   // Details on how to efficiently read entire file here:
   // https://stackoverflow.com/questions/1284423/read-entire-file-in-scala/27518379
@@ -31,6 +31,8 @@ object DivideConquer extends App {
 
   worker ! Assignment(task)
   val future = worker ? Execute
+
+  // Expected word count: 5552
   future.onComplete {
     case Success(TaskReport(WordCountResult(count))) => println(s"Final count: $count")
     case Failure(exception) => println(s"Failure: ${exception.getMessage}")
