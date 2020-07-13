@@ -43,21 +43,21 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
 
   when(Idle) {
     case Event(Assignment(task), NoWork) =>
-      log.info("Going to OnStandBy")
+      log.debug("Going to OnStandBy")
       goto(OnStandby) using Workload(List(task))
   }
 
   when(OnStandby) {
 
     case Event(Assignment(task), Workload(tasks)) =>
-      log.info("Receiving more task in OnStandBy")
+      log.debug("Receiving more task in OnStandBy")
       stay using Workload(tasks :+ task)
 
     case Event(Execute, Workload(tasks)) =>
       // If there's only one atomic task
       // Perform the task and report the result
       if (tasks.length == 1 && tasks.head.isAtomic) {
-        log.info("Performing atomic task")
+        log.debug("Performing atomic task")
         val result = perform(tasks.head)
         sender ! TaskReport(result)
         goto(Idle) using NoWork
