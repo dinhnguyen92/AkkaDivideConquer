@@ -27,7 +27,7 @@ object DivideConquer extends App {
   val worker = system.actorOf(Props[WordCountWorker], "rootWorker")
   val task = WordCountTask(text)
 
-  implicit val timeout: Timeout = Timeout(10 second)
+  implicit val timeout: Timeout = Timeout(5 second)
 
   worker ! Assignment(task)
   val future = worker ? Execute
