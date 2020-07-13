@@ -110,7 +110,7 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
       else {
         // If there are still in-progress workers
         // Keep waiting for their reports
-        stay using DelegatedWorkload(inProgressWorkers, originalWorkGiver, resultsSoFar)
+        stay using DelegatedWorkload(remainingWorkers, originalWorkGiver, resultsSoFar)
       }
   }
 }
