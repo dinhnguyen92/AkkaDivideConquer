@@ -4,7 +4,7 @@ This project demonstrates how Akka actors can be used to recursively divide and 
 
 A worker is implemented as a Finite State Machine (FSM) with the following states and state transition:
 
-![Worker FSM Diagram](https://drive.google.com/uc?export=view&id=1BmMIUKyo5MGlHrZYvCr2-NK7koUxx1Pp)
+![Worker FSM Diagram](https://drive.google.com/uc?export=view&id=1le0nlKl-YlBirBn07YD2unK2TbwFLcUi)
 
 The `Worker` class is an abstract class. This allows the common logic for distributing tasks and aggregating results among the workers to be abstracted away. This leaves the particular logic for how to divide specific types of tasks and how to combine their results to be implemented in specialized classes that inherit from the `Worker` class. In this demo project, the specialized worker class is the `WordCountWorker` class, which counts the number of words in a string by recursively decomposing the string into smaller substrings.
 
