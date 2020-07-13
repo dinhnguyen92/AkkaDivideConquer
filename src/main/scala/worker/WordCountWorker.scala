@@ -1,5 +1,6 @@
 package worker
-import akka.actor.{ActorRef, Props}
+import akka.actor.SupervisorStrategy.{Escalate, Stop}
+import akka.actor.{ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
 import result.{Result, WordCountResult}
 import task.{Task, WordCountTask}
 import task.Task.TaskTypeMisMatch
@@ -9,6 +10,11 @@ import task.Task.TaskTypeMisMatch
 class WordCountWorker() extends Worker[WordCountTask, WordCountResult](2) {
 
   import WordCountTask._
+
+  override val supervisorStrategy: SupervisorStrategy = OneForOneStrategy() {
+    case _: TaskTypeMisMatch => Stop
+    case _: Exception => Escalate
+  }
 
   // We'll find an appropriate whitespace char
   // where we can split the string into 2 substrings
