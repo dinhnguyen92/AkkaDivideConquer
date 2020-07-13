@@ -23,6 +23,7 @@ object Worker {
   case object NoWork extends WorkerData
   case class Workload(tasks: List[Task]) extends WorkerData
   case class DelegatedWorkload(inProgressWorkers: Set[ActorRef],
+                               originalWorkGiver: ActorRef,
                                results: List[Result]) extends WorkerData
 }
 
@@ -85,13 +86,13 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // Tell all child workers to execute them
         workerGroup ! Broadcast(Execute)
 
-        goto(AggregatingResults) using DelegatedWorkload(childWorkers.toSet, List())
+        goto(AggregatingResults) using DelegatedWorkload(childWorkers.toSet, sender, List())
       }
   }
 
   when(AggregatingResults) {
 
-    case Event(TaskReport(result), DelegatedWorkload(inProgressWorkers, results)) =>
+    case Event(TaskReport(result), DelegatedWorkload(inProgressWorkers, originalWorkGiver, results)) =>
       // Remove the child worker from the in-progress group and kill it
       val remainingWorkers = inProgressWorkers - sender
       sender ! PoisonPill
@@ -100,16 +101,16 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
 
       if (remainingWorkers.isEmpty) {
         // If results from all workers have been collected
-        // Compute the aggregate result and report back to direct manager
+        // Compute the aggregate result and report back to original work giver
         val aggregateResult = resultsSoFar.reduceLeft(combine)
-        sender ! TaskReport(aggregateResult)
+        originalWorkGiver ! TaskReport(aggregateResult)
 
         goto(Idle) using NoWork
       }
       else {
         // If there are still in-progress workers
         // Keep waiting for their reports
-        stay using DelegatedWorkload(inProgressWorkers, resultsSoFar)
+        stay using DelegatedWorkload(inProgressWorkers, originalWorkGiver, resultsSoFar)
       }
   }
 }

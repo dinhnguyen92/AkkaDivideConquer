@@ -16,12 +16,11 @@ object DivideConquer extends App {
 
   // Details on how to read file in "resources" folder here:
   // https://stackoverflow.com/questions/31453511/how-to-read-a-text-file-using-relative-path-in-scala
-  //val source = Source.fromResource("words.txt")
+  val source = Source.fromResource("words.txt")
 
   // Details on how to efficiently read entire file here:
   // https://stackoverflow.com/questions/1284423/read-entire-file-in-scala/27518379
-  //val text = try source.getLines mkString "\n" finally source.close
-  val text = "helolow dfsdafdsa dfhafds 22fhds"
+  val text = try source.getLines mkString "\n" finally source.close
   println(s"text: $text")
 
   val system = ActorSystem("DivideConquerSystem")
