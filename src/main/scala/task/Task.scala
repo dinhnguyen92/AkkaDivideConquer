@@ -2,6 +2,7 @@ package task
 
 trait Task {
   val isAtomic: Boolean
+  val summary: String
 }
 
 object Task {

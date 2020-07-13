@@ -1,6 +1,6 @@
 package worker
 
-import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props}
+import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Terminated}
 import akka.routing.{Broadcast, RoundRobinGroup}
 import result.Result
 import task.Task
@@ -44,22 +44,22 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
 
   when(Idle) {
     case Event(Assignment(task), NoWork) =>
-      log.debug("Going to OnStandBy")
+      log.debug(s"Received task: ${task.summary}. Going to standby")
       goto(OnStandby) using Workload(List(task))
   }
 
   when(OnStandby) {
 
     case Event(Assignment(task), Workload(tasks)) =>
-      log.debug("Receiving more task in OnStandBy")
+      log.debug(s"Received task: ${task.summary}. Staying on standby")
       stay using Workload(tasks :+ task)
 
     case Event(Execute, Workload(tasks)) =>
       // If there's only one atomic task
       // Perform the task and report the result
       if (tasks.length == 1 && tasks.head.isAtomic) {
-        log.debug("Performing atomic task")
         val result = perform(tasks.head)
+        log.debug(s"Performed atomic task: ${tasks.head.summary}. Result: ${result.summary}")
         sender ! TaskReport(result)
         goto(Idle) using NoWork
       }
@@ -74,6 +74,7 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // The number of child workers is either the branching factor
         // or the number of tasks, whichever is smaller
         val workerCount = math.min(branchingFactor, tasksToTriage.length)
+        log.debug(s"Dividing ${tasksToTriage.length} tasks among $workerCount child workers.")
         val childWorkers = createChildWorkers(workerCount)
         childWorkers.foreach(context.watch)
 
@@ -103,6 +104,7 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // If results from all workers have been collected
         // Compute the aggregate result and report back to original work giver
         val aggregateResult = resultsSoFar.reduceLeft(combine)
+        log.debug(s"Reporting aggregated result: ${aggregateResult.summary}")
         originalWorkGiver ! TaskReport(aggregateResult)
 
         goto(Idle) using NoWork
@@ -112,7 +114,19 @@ abstract class Worker[T <: Task, R <: Result](val branchingFactor: Int)
         // Keep waiting for their reports
         stay using DelegatedWorkload(remainingWorkers, originalWorkGiver, resultsSoFar)
       }
+
+    case Event(Terminated(childWorker), delegatedWorkload) =>
+      log.debug("Child worker terminated")
+      stay using delegatedWorkload
+  }
+
+  whenUnhandled {
+    case Event(Terminated(_), _) =>
+      log.debug("Child worker terminated")
+      stay
+
+    case Event(event, _) =>
+      log.debug(s"Unexpected event: $event")
+      stay
   }
 }
-
-
